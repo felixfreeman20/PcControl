@@ -1,13 +1,13 @@
 import os
 
 PASSWORD = os.environ.get("APP_PASSWORD")
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, session
 from datetime import datetime
 from flask import Flask, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
-
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 pc_status = {
     "online": False,
     "cpu": 0,
@@ -17,8 +17,39 @@ pc_status = {
     "last_seen": "Never"
 }
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        if request.form.get("password") == PASSWORD:
+            session["logged_in"] = True
+            return redirect("/")
+
+    return """
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;text-align:center;padding-top:100px;">
+        <h1>🔒 PC Control Login</h1>
+
+        <form method="POST">
+            <input type="password" name="password" placeholder="Password">
+            <button type="submit">Login</button>
+        </form>
+    </body>
+    </html>
+    """
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
 @app.route("/")
 def home():
+
+    if not session.get("logged_in"):
+        return redirect("/login")
+
+    return f"""
     return f"""
     <!DOCTYPE html>
     <html>
