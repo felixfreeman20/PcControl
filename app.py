@@ -2,12 +2,13 @@ import os
 from flask import Flask, request, jsonify, redirect, session
 from datetime import datetime
 from collections import deque
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 
 PASSWORD = os.environ.get("APP_PASSWORD")
-
+os.makedirs("screenshots", exist_ok=True)
 # ===== STATE =====
 pc_status = {
     "online": False,
@@ -23,6 +24,9 @@ screenshots = []
 process_data = []
 file_list = []
 
+@app.route("/screenshots/<filename>")
+def get_screenshot(filename):
+    return send_from_directory("screenshots", filename)
 
 # ===== LOGIN =====
 @app.route("/login", methods=["GET", "POST"])
