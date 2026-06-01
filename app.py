@@ -1,4 +1,6 @@
 import os
+
+PASSWORD = os.environ.get("APP_PASSWORD")
 from flask import Flask, request, jsonify
 from datetime import datetime
 from flask import Flask, request, jsonify
