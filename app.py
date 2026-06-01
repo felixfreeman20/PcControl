@@ -1,14 +1,12 @@
 import os
-from flask import Flask, request, jsonify, redirect, session
+from flask import Flask, request, jsonify, redirect, session, send_from_directory
 from datetime import datetime
-from collections import deque
-from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 
 PASSWORD = os.environ.get("APP_PASSWORD")
-os.makedirs("screenshots", exist_ok=True)
+
 # ===== STATE =====
 pc_status = {
     "online": False,
@@ -19,10 +17,12 @@ pc_status = {
     "last_seen": "Never"
 }
 
-command_queue = deque()
+pending_command = None
 screenshots = []
 process_data = []
-file_list = []
+
+# ===== SCREENSHOT FILE ACCESS =====
+os.makedirs("screenshots", exist_ok=True)
 
 @app.route("/screenshots/<filename>")
 def get_screenshot(filename):
@@ -35,7 +35,6 @@ def login():
         if request.form.get("password") == PASSWORD:
             session["logged_in"] = True
             return redirect("/")
-
     return """
     <html>
     <body style="background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:Arial;">
@@ -48,12 +47,11 @@ def login():
     </html>
     """
 
-
+# ===== LOGOUT =====
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
-
 
 # ===== DASHBOARD =====
 @app.route("/")
@@ -62,174 +60,33 @@ def home():
         return redirect("/login")
 
     return f"""
-    <!DOCTYPE html>
     <html>
-    <head>
-        <title>PC Control</title>
+    <body style="background:#0f172a;color:white;font-family:Arial;padding:20px;">
+        <h1>PC Dashboard</h1>
 
-        <style>
-            * {{
-                margin:0;
-                padding:0;
-                box-sizing:border-box;
-                font-family:Arial;
-            }}
+        <a href="/screenshot_cmd">📸 Screenshot</a> |
+        <a href="/lock">🔒 Lock</a> |
+        <a href="/logout">Logout</a>
 
-            body {{
-                display:flex;
-                background:#0f172a;
-                color:white;
-                height:100vh;
-            }}
+        <hr>
 
-            /* SIDEBAR */
-            .sidebar {{
-                width:220px;
-                background:#111827;
-                padding:20px;
-            }}
+        <p><b>PC:</b> {pc_status["hostname"]}</p>
+        <p><b>Status:</b> {'🟢 Online' if pc_status['online'] else '🔴 Offline'}</p>
+        <p><b>CPU:</b> {pc_status["cpu"]}%</p>
+        <p><b>RAM:</b> {pc_status["ram"]}%</p>
+        <p><b>Disk:</b> {pc_status["disk"]}%</p>
+        <p><b>Last:</b> {pc_status["last_seen"]}</p>
 
-            .sidebar h2 {{
-                font-size:18px;
-                margin-bottom:20px;
-            }}
+        <h3>Screenshots</h3>
+        {''.join([f'<img src="/screenshots/{s}" width="300"><br>' for s in screenshots])}
 
-            .btn {{
-                display:block;
-                padding:10px;
-                margin-bottom:10px;
-                border-radius:8px;
-                text-decoration:none;
-                color:white;
-                background:#1f2937;
-            }}
-
-            .btn:hover {{
-                background:#374151;
-            }}
-
-            .danger {{
-                background:#ef4444;
-            }}
-
-            .danger:hover {{
-                background:#dc2626;
-            }}
-
-            .main {{
-                flex:1;
-                padding:20px;
-                overflow:auto;
-            }}
-
-            /* GRID */
-            .grid {{
-                display:grid;
-                grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-                gap:15px;
-            }}
-
-            .card {{
-                background:#1e293b;
-                padding:15px;
-                border-radius:12px;
-            }}
-
-            .title {{
-                color:#94a3b8;
-                font-size:12px;
-            }}
-
-            .value {{
-                font-size:20px;
-                margin-top:10px;
-            }}
-
-            .section {{
-                margin-top:20px;
-            }}
-
-            img {{
-                width:100%;
-                border-radius:10px;
-                margin-top:10px;
-            }}
-
-        </style>
-    </head>
-
-    <body>
-
-        <!-- SIDEBAR -->
-        <div class="sidebar">
-            <h2>🖥️ Control</h2>
-
-            <a class="btn" href="/">Dashboard</a>
-            <a class="btn" href="/screenshot_cmd">📸 Screenshot</a>
-            <a class="btn" href="/lock">🔒 Lock PC</a>
-
-            <a class="btn danger" href="/logout">Logout</a>
-        </div>
-
-        <!-- MAIN -->
-        <div class="main">
-
-            <h1>PC Dashboard</h1>
-
-            <div class="grid">
-
-                <div class="card">
-                    <div class="title">Computer</div>
-                    <div class="value">{pc_status["hostname"]}</div>
-                </div>
-
-                <div class="card">
-                    <div class="title">Status</div>
-                    <div class="value">{'🟢 Online' if pc_status['online'] else '🔴 Offline'}</div>
-                </div>
-
-                <div class="card">
-                    <div class="title">CPU</div>
-                    <div class="value">{pc_status["cpu"]}%</div>
-                </div>
-
-                <div class="card">
-                    <div class="title">RAM</div>
-                    <div class="value">{pc_status["ram"]}%</div>
-                </div>
-
-                <div class="card">
-                    <div class="title">Disk</div>
-                    <div class="value">{pc_status["disk"]}%</div>
-                </div>
-
-                <div class="card">
-                    <div class="title">Last Seen</div>
-                    <div class="value">{pc_status["last_seen"]}</div>
-                </div>
-
-            </div>
-
-            <!-- SCREENSHOTS -->
-            <div class="section">
-                <h2>📸 Screenshots</h2>
-                {"".join([f'<img src="/screenshots/{s}">' for s in screenshots])}
-            </div>
-
-            <!-- PROCESSES -->
-            <div class="section">
-                <h2>⚙️ Top Processes</h2>
-                {"".join([f"<div class='card'>{p['name']} - {p['cpu_percent']}%</div>" for p in process_data])}
-            </div>
-
-        </div>
-
+        <h3>Processes</h3>
+        {''.join([f"<div>{p['name']} - {p['cpu_percent']}%</div>" for p in process_data])}
     </body>
     </html>
     """
 
-
-# ===== STATUS UPDATE =====
+# ===== STATUS =====
 @app.route("/status", methods=["POST"])
 def status():
     global pc_status
@@ -247,47 +104,48 @@ def status():
 
     return jsonify({"ok": True})
 
-
-# ===== COMMAND SYSTEM =====
+# ===== COMMAND SYSTEM (FIXED) =====
 @app.route("/command")
 def command():
-    if not session.get("logged_in"):
-        return jsonify({"command": None})
+    global pending_command
 
-    if command_queue:
-        return jsonify({"command": command_queue.popleft()})
+    cmd = pending_command
+    pending_command = None
 
-    return jsonify({"command": None})
-
-
-@app.route("/lock")
-def lock():
-    command_queue.append("lock")
-    return redirect("/")
-
+    return jsonify({"command": cmd})
 
 @app.route("/screenshot_cmd")
 def screenshot_cmd():
-    command_queue.append("screenshot")
+    global pending_command
+    pending_command = "screenshot"
     return redirect("/")
 
+@app.route("/lock")
+def lock():
+    global pending_command
+    pending_command = "lock"
+    return redirect("/")
 
-# ===== UPLOADS =====
+# ===== UPLOAD SCREENSHOT =====
 @app.route("/upload_screenshot", methods=["POST"])
 def upload_screenshot():
     file = request.files["file"]
+
     name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".png"
-    file.save(f"screenshots/{name}")
+    path = f"screenshots/{name}"
+    file.save(path)
+
     screenshots.append(name)
+
     return jsonify({"ok": True})
 
-
+# ===== PROCESS LIST =====
 @app.route("/processes", methods=["POST"])
 def processes():
     global process_data
     process_data = request.json.get("processes", [])
     return jsonify({"ok": True})
 
-
+# ===== RUN =====
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
