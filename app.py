@@ -6,6 +6,7 @@ PASSWORD = os.environ.get("APP_PASSWORD")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
+
 pc_status = {
     "online": False,
     "cpu": 0,
@@ -14,6 +15,9 @@ pc_status = {
     "hostname": "Unknown",
     "last_seen": "Never"
 }
+
+pending_command = None
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -24,13 +28,20 @@ def login():
 
     return """
     <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;text-align:center;padding-top:100px;">
+    <body style="
+        background:#0f172a;
+        color:white;
+        font-family:Arial;
+        text-align:center;
+        padding-top:100px;">
+        
         <h1>🔒 PC Control Login</h1>
 
         <form method="POST">
             <input type="password" name="password" placeholder="Password">
             <button type="submit">Login</button>
         </form>
+
     </body>
     </html>
     """
@@ -40,6 +51,30 @@ def login():
 def logout():
     session.clear()
     return redirect("/login")
+
+
+@app.route("/lock")
+def lock_pc():
+    global pending_command
+
+    if not session.get("logged_in"):
+        return redirect("/login")
+
+    pending_command = "lock"
+    return redirect("/")
+
+
+@app.route("/command")
+def get_command():
+    global pending_command
+
+    command = pending_command
+    pending_command = None
+
+    return jsonify({
+        "command": command
+    })
+
 
 @app.route("/")
 def home():
@@ -65,7 +100,30 @@ def home():
 
             h1 {{
                 text-align: center;
-                margin-bottom: 30px;
+                margin-bottom: 20px;
+            }}
+
+            .buttons {{
+                text-align: center;
+                margin-bottom: 25px;
+            }}
+
+            .btn {{
+                display: inline-block;
+                padding: 12px 20px;
+                border-radius: 10px;
+                text-decoration: none;
+                color: white;
+                font-weight: bold;
+                margin: 5px;
+            }}
+
+            .lock {{
+                background: #f59e0b;
+            }}
+
+            .logout {{
+                background: #ef4444;
             }}
 
             .grid {{
@@ -111,6 +169,11 @@ def home():
     <body>
 
         <h1>🖥️ PC Control Dashboard</h1>
+
+        <div class="buttons">
+            <a class="btn lock" href="/lock">🔒 Lock PC</a>
+            <a class="btn logout" href="/logout">Logout</a>
+        </div>
 
         <div class="grid">
 
@@ -158,6 +221,7 @@ def home():
     </html>
     """
 
+
 @app.route("/status", methods=["POST"])
 def status():
     global pc_status
@@ -172,6 +236,7 @@ def status():
     pc_status["last_seen"] = datetime.now().strftime("%H:%M:%S")
 
     return jsonify({"success": True})
+
 
 if __name__ == "__main__":
     app.run(
