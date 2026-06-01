@@ -58,68 +58,167 @@ def home():
         return redirect("/login")
 
     return f"""
+    <!DOCTYPE html>
     <html>
     <head>
-    <meta http-equiv="refresh" content="5">
-    <style>
-        body {{ background:#0f172a; color:white; font-family:Arial; padding:20px; }}
-        .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:15px; }}
-        .card {{ background:#1e293b; padding:15px; border-radius:12px; }}
-        .title {{ color:#94a3b8; font-size:12px; }}
-        .value {{ font-size:22px; margin-top:10px; }}
-        .online {{ color:#22c55e; }}
-        .offline {{ color:#ef4444; }}
-    </style>
+        <title>PC Control</title>
+
+        <style>
+            * {{
+                margin:0;
+                padding:0;
+                box-sizing:border-box;
+                font-family:Arial;
+            }}
+
+            body {{
+                display:flex;
+                background:#0f172a;
+                color:white;
+                height:100vh;
+            }}
+
+            /* SIDEBAR */
+            .sidebar {{
+                width:220px;
+                background:#111827;
+                padding:20px;
+            }}
+
+            .sidebar h2 {{
+                font-size:18px;
+                margin-bottom:20px;
+            }}
+
+            .btn {{
+                display:block;
+                padding:10px;
+                margin-bottom:10px;
+                border-radius:8px;
+                text-decoration:none;
+                color:white;
+                background:#1f2937;
+            }}
+
+            .btn:hover {{
+                background:#374151;
+            }}
+
+            .danger {{
+                background:#ef4444;
+            }}
+
+            .danger:hover {{
+                background:#dc2626;
+            }}
+
+            .main {{
+                flex:1;
+                padding:20px;
+                overflow:auto;
+            }}
+
+            /* GRID */
+            .grid {{
+                display:grid;
+                grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+                gap:15px;
+            }}
+
+            .card {{
+                background:#1e293b;
+                padding:15px;
+                border-radius:12px;
+            }}
+
+            .title {{
+                color:#94a3b8;
+                font-size:12px;
+            }}
+
+            .value {{
+                font-size:20px;
+                margin-top:10px;
+            }}
+
+            .section {{
+                margin-top:20px;
+            }}
+
+            img {{
+                width:100%;
+                border-radius:10px;
+                margin-top:10px;
+            }}
+
+        </style>
     </head>
 
     <body>
-    <h2>🖥️ PC Dashboard</h2>
 
-    <a href="/logout">Logout</a>
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <h2>🖥️ Control</h2>
 
-    <div class="grid">
+            <a class="btn" href="/">Dashboard</a>
+            <a class="btn" href="/screenshot_cmd">📸 Screenshot</a>
+            <a class="btn" href="/lock">🔒 Lock PC</a>
 
-        <div class="card">
-            <div class="title">Computer</div>
-            <div class="value">{pc_status["hostname"]}</div>
+            <a class="btn danger" href="/logout">Logout</a>
         </div>
 
-        <div class="card">
-            <div class="title">Status</div>
-            <div class="value">{'🟢 Online' if pc_status['online'] else '🔴 Offline'}</div>
+        <!-- MAIN -->
+        <div class="main">
+
+            <h1>PC Dashboard</h1>
+
+            <div class="grid">
+
+                <div class="card">
+                    <div class="title">Computer</div>
+                    <div class="value">{pc_status["hostname"]}</div>
+                </div>
+
+                <div class="card">
+                    <div class="title">Status</div>
+                    <div class="value">{'🟢 Online' if pc_status['online'] else '🔴 Offline'}</div>
+                </div>
+
+                <div class="card">
+                    <div class="title">CPU</div>
+                    <div class="value">{pc_status["cpu"]}%</div>
+                </div>
+
+                <div class="card">
+                    <div class="title">RAM</div>
+                    <div class="value">{pc_status["ram"]}%</div>
+                </div>
+
+                <div class="card">
+                    <div class="title">Disk</div>
+                    <div class="value">{pc_status["disk"]}%</div>
+                </div>
+
+                <div class="card">
+                    <div class="title">Last Seen</div>
+                    <div class="value">{pc_status["last_seen"]}</div>
+                </div>
+
+            </div>
+
+            <!-- SCREENSHOTS -->
+            <div class="section">
+                <h2>📸 Screenshots</h2>
+                {"".join([f'<img src="/screenshots/{s}">' for s in screenshots])}
+            </div>
+
+            <!-- PROCESSES -->
+            <div class="section">
+                <h2>⚙️ Top Processes</h2>
+                {"".join([f"<div class='card'>{p['name']} - {p['cpu_percent']}%</div>" for p in process_data])}
+            </div>
+
         </div>
-
-        <div class="card">
-            <div class="title">CPU</div>
-            <div class="value">{pc_status["cpu"]}%</div>
-        </div>
-
-        <div class="card">
-            <div class="title">RAM</div>
-            <div class="value">{pc_status["ram"]}%</div>
-        </div>
-
-        <div class="card">
-            <div class="title">Disk</div>
-            <div class="value">{pc_status["disk"]}%</div>
-        </div>
-
-        <div class="card">
-            <div class="title">Last Seen</div>
-            <div class="value">{pc_status["last_seen"]}</div>
-        </div>
-
-    </div>
-
-    <h3>📸 Screenshots</h3>
-    <ul>
-        {''.join([f"<li>{s}</li>" for s in screenshots])}
-    </ul>
-
-    <h3>⚙️ Top Processes</h3>
-    <ul>
-        {''.join([f"<li>{p['name']} - {p['cpu_percent']}%</li>" for p in process_data])}
-    </ul>
 
     </body>
     </html>
