@@ -1,12 +1,14 @@
 import os
-from flask import Flask, request, jsonify, redirect, session, send_from_directory
+from flask import Flask, request, jsonify, redirect, session
 from datetime import datetime
+from collections import deque
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 
 PASSWORD = os.environ.get("APP_PASSWORD")
 
+# ===== STATE =====
 pc_status = {
     "online": False,
     "cpu": 0,
@@ -16,26 +18,26 @@ pc_status = {
     "last_seen": "Never"
 }
 
-pending_command = None
-process_list = []
-SCREENSHOT_PATH = "latest.png"
+command_queue = deque()
+screenshots = []
+process_data = []
+file_list = []
 
 
-# ---------------- LOGIN ----------------
+# ===== LOGIN =====
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         if request.form.get("password") == PASSWORD:
             session["logged_in"] = True
             return redirect("/")
-        return "Wrong password"
 
     return """
     <html>
     <body style="background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:Arial;">
-        <h1>Login</h1>
+        <h2>Login</h2>
         <form method="POST">
-            <input type="password" name="password"/>
+            <input name="password" type="password" placeholder="Password">
             <button>Login</button>
         </form>
     </body>
@@ -49,41 +51,86 @@ def logout():
     return redirect("/login")
 
 
-# ---------------- COMMANDS ----------------
-@app.route("/command")
-def get_command():
-    global pending_command
-    cmd = pending_command
-    pending_command = None
-    return jsonify({"command": cmd})
-
-
-@app.route("/screenshot_command")
-def screenshot_command():
-    global pending_command
-
+# ===== DASHBOARD =====
+@app.route("/")
+def home():
     if not session.get("logged_in"):
         return redirect("/login")
 
-    pending_command = "screenshot"
-    return redirect("/")
+    return f"""
+    <html>
+    <head>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body {{ background:#0f172a; color:white; font-family:Arial; padding:20px; }}
+        .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:15px; }}
+        .card {{ background:#1e293b; padding:15px; border-radius:12px; }}
+        .title {{ color:#94a3b8; font-size:12px; }}
+        .value {{ font-size:22px; margin-top:10px; }}
+        .online {{ color:#22c55e; }}
+        .offline {{ color:#ef4444; }}
+    </style>
+    </head>
+
+    <body>
+    <h2>🖥️ PC Dashboard</h2>
+
+    <a href="/logout">Logout</a>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="title">Computer</div>
+            <div class="value">{pc_status["hostname"]}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Status</div>
+            <div class="value">{'🟢 Online' if pc_status['online'] else '🔴 Offline'}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">CPU</div>
+            <div class="value">{pc_status["cpu"]}%</div>
+        </div>
+
+        <div class="card">
+            <div class="title">RAM</div>
+            <div class="value">{pc_status["ram"]}%</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Disk</div>
+            <div class="value">{pc_status["disk"]}%</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Last Seen</div>
+            <div class="value">{pc_status["last_seen"]}</div>
+        </div>
+
+    </div>
+
+    <h3>📸 Screenshots</h3>
+    <ul>
+        {''.join([f"<li>{s}</li>" for s in screenshots])}
+    </ul>
+
+    <h3>⚙️ Top Processes</h3>
+    <ul>
+        {''.join([f"<li>{p['name']} - {p['cpu_percent']}%</li>" for p in process_data])}
+    </ul>
+
+    </body>
+    </html>
+    """
 
 
-@app.route("/processes_command")
-def processes_command():
-    global pending_command
-
-    if not session.get("logged_in"):
-        return redirect("/login")
-
-    pending_command = "processes"
-    return redirect("/")
-
-
-# ---------------- DATA RECEIVERS ----------------
+# ===== STATUS UPDATE =====
 @app.route("/status", methods=["POST"])
 def status():
     global pc_status
+
     data = request.json
 
     pc_status.update({
@@ -98,66 +145,45 @@ def status():
     return jsonify({"ok": True})
 
 
-@app.route("/processes", methods=["POST"])
-def processes():
-    global process_list
-    process_list = request.json.get("processes", [])
-    return jsonify({"ok": True})
+# ===== COMMAND SYSTEM =====
+@app.route("/command")
+def command():
+    if not session.get("logged_in"):
+        return jsonify({"command": None})
+
+    if command_queue:
+        return jsonify({"command": command_queue.popleft()})
+
+    return jsonify({"command": None})
 
 
+@app.route("/lock")
+def lock():
+    command_queue.append("lock")
+    return redirect("/")
+
+
+@app.route("/screenshot_cmd")
+def screenshot_cmd():
+    command_queue.append("screenshot")
+    return redirect("/")
+
+
+# ===== UPLOADS =====
 @app.route("/upload_screenshot", methods=["POST"])
 def upload_screenshot():
     file = request.files["file"]
-    file.save(SCREENSHOT_PATH)
+    name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".png"
+    file.save(f"screenshots/{name}")
+    screenshots.append(name)
     return jsonify({"ok": True})
 
 
-@app.route("/latest_screenshot")
-def latest_screenshot():
-    return send_from_directory(".", SCREENSHOT_PATH)
-
-
-# ---------------- DASHBOARD ----------------
-@app.route("/")
-def home():
-    if not session.get("logged_in"):
-        return redirect("/login")
-
-    return f"""
-    <html>
-    <head>
-    <meta http-equiv="refresh" content="5">
-    <style>
-        body {{ background:#0f172a; color:white; font-family:Arial; padding:20px; }}
-        .card {{ background:#1e293b; padding:15px; margin:10px; border-radius:10px; }}
-        .btn {{ padding:10px 15px; background:#2563eb; color:white; text-decoration:none; margin:5px; border-radius:8px; }}
-        .danger {{ background:#ef4444; }}
-    </style>
-    </head>
-
-    <body>
-
-    <h1>PC Control Panel</h1>
-
-    <a class="btn" href="/screenshot_command">📸 Screenshot</a>
-    <a class="btn" href="/processes_command">⚙️ Processes</a>
-    <a class="btn danger" href="/logout">Logout</a>
-
-    <div class="card">PC: {pc_status["hostname"]}</div>
-    <div class="card">CPU: {pc_status["cpu"]}%</div>
-    <div class="card">RAM: {pc_status["ram"]}%</div>
-    <div class="card">Disk: {pc_status["disk"]}%</div>
-    <div class="card">Last Seen: {pc_status["last_seen"]}</div>
-
-    <h2>Screenshot</h2>
-    <img src="/latest_screenshot" width="600"/>
-
-    <h2>Top Processes</h2>
-    <pre>{process_list[:10]}</pre>
-
-    </body>
-    </html>
-    """
+@app.route("/processes", methods=["POST"])
+def processes():
+    global process_data
+    process_data = request.json.get("processes", [])
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
