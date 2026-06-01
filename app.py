@@ -1,10 +1,8 @@
 import os
-
-PASSWORD = os.environ.get("APP_PASSWORD")
 from flask import Flask, request, jsonify, redirect, session
 from datetime import datetime
-from flask import Flask, request, jsonify
-from datetime import datetime
+
+PASSWORD = os.environ.get("APP_PASSWORD")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
@@ -49,7 +47,6 @@ def home():
     if not session.get("logged_in"):
         return redirect("/login")
 
-    return f"""
     return f"""
     <!DOCTYPE html>
     <html>
