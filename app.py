@@ -3,12 +3,15 @@ from flask import Flask, request, jsonify, redirect, session, send_from_director
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
+app.secret_key = os.environ.get("SECRET_KEY", "dev")
 
 PASSWORD = os.environ.get("APP_PASSWORD")
+CLIENT_KEY = os.environ.get("CLIENT_KEY", "client123")
+
+os.makedirs("screenshots", exist_ok=True)
 
 # ===== STATE =====
-pc_status = {
+state = {
     "online": False,
     "cpu": 0,
     "ram": 0,
@@ -17,37 +20,28 @@ pc_status = {
     "last_seen": "Never"
 }
 
-pending_command = None
+command = None
 screenshots = []
-process_data = []
+processes = []
+files = []
 
-# ===== SCREENSHOT FILE ACCESS =====
-os.makedirs("screenshots", exist_ok=True)
-
-@app.route("/screenshots/<filename>")
-def get_screenshot(filename):
-    return send_from_directory("screenshots", filename)
-
-# ===== LOGIN =====
+# ===== AUTH =====
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         if request.form.get("password") == PASSWORD:
-            session["logged_in"] = True
+            session["ok"] = True
             return redirect("/")
     return """
-    <html>
-    <body style="background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:Arial;">
+    <body style="background:#0b1220;color:white;font-family:Arial;text-align:center;padding-top:100px">
         <h2>Login</h2>
         <form method="POST">
-            <input name="password" type="password" placeholder="Password">
+            <input name="password" type="password" />
             <button>Login</button>
         </form>
     </body>
-    </html>
     """
 
-# ===== LOGOUT =====
 @app.route("/logout")
 def logout():
     session.clear()
@@ -56,44 +50,119 @@ def logout():
 # ===== DASHBOARD =====
 @app.route("/")
 def home():
-    if not session.get("logged_in"):
+    if not session.get("ok"):
         return redirect("/login")
 
     return f"""
     <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;padding:20px;">
-        <h1>PC Dashboard</h1>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            margin:0;
+            font-family:Arial;
+            background:#0b1220;
+            color:white;
+        }}
 
-        <a href="/screenshot_cmd">📸 Screenshot</a> |
-        <a href="/lock">🔒 Lock</a> |
-        <a href="/logout">Logout</a>
+        .top {{
+            padding:15px;
+            display:flex;
+            justify-content:space-between;
+            background:#111a2e;
+        }}
 
-        <hr>
+        .grid {{
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+            gap:10px;
+            padding:10px;
+        }}
 
-        <p><b>PC:</b> {pc_status["hostname"]}</p>
-        <p><b>Status:</b> {'🟢 Online' if pc_status['online'] else '🔴 Offline'}</p>
-        <p><b>CPU:</b> {pc_status["cpu"]}%</p>
-        <p><b>RAM:</b> {pc_status["ram"]}%</p>
-        <p><b>Disk:</b> {pc_status["disk"]}%</p>
-        <p><b>Last:</b> {pc_status["last_seen"]}</p>
+        .card {{
+            background:#16213a;
+            padding:12px;
+            border-radius:12px;
+        }}
 
+        .btn {{
+            display:inline-block;
+            padding:10px;
+            margin:5px;
+            background:#2b3a67;
+            color:white;
+            text-decoration:none;
+            border-radius:8px;
+        }}
+
+        .danger {{ background:#d33; }}
+
+        img {{
+            width:100%;
+            border-radius:10px;
+            margin-top:10px;
+        }}
+    </style>
+    </head>
+
+    <body>
+
+    <div class="top">
+        <div>🖥️ PC Control</div>
+        <a class="btn danger" href="/logout">Logout</a>
+    </div>
+
+    <div style="padding:10px;">
+        <a class="btn" href="/cmd/screenshot">📸 Screenshot</a>
+        <a class="btn" href="/cmd/lock">🔒 Lock</a>
+        <a class="btn" href="/cmd/files">📁 Files</a>
+    </div>
+
+    <div class="grid">
+        <div class="card">PC: {state["hostname"]}</div>
+        <div class="card">CPU: {state["cpu"]}%</div>
+        <div class="card">RAM: {state["ram"]}%</div>
+        <div class="card">Disk: {state["disk"]}%</div>
+        <div class="card">Status: {'🟢' if state['online'] else '🔴'}</div>
+        <div class="card">Last: {state["last_seen"]}</div>
+    </div>
+
+    <div style="padding:10px;">
         <h3>Screenshots</h3>
-        {''.join([f'<img src="/screenshots/{s}" width="300"><br>' for s in screenshots])}
+        {''.join([f'<img src="/screenshots/{s}">' for s in screenshots])}
 
         <h3>Processes</h3>
-        {''.join([f"<div>{p['name']} - {p['cpu_percent']}%</div>" for p in process_data])}
+        {''.join([f"<div class='card'>{p['name']} - {p['cpu']}%</div>" for p in processes])}
+
+        <h3>Files</h3>
+        {''.join([f"<div class='card'>{f}</div>" for f in files])}
+    </div>
+
     </body>
     </html>
     """
 
-# ===== STATUS =====
-@app.route("/status", methods=["POST"])
-def status():
-    global pc_status
+# ===== COMMANDS =====
+@app.route("/cmd/<c>")
+def set_cmd(c):
+    global command
+    command = c
+    return redirect("/")
 
+@app.route("/api/command")
+def get_cmd():
+    global command
+    c = command
+    command = None
+    return jsonify({"command": c})
+
+# ===== STATUS =====
+@app.route("/api/status", methods=["POST"])
+def status():
+    global state
     data = request.json
 
-    pc_status.update({
+    state.update({
         "online": True,
         "cpu": data.get("cpu", 0),
         "ram": data.get("ram", 0),
@@ -102,50 +171,33 @@ def status():
         "last_seen": datetime.now().strftime("%H:%M:%S")
     })
 
-    return jsonify({"ok": True})
+    return {"ok": True}
 
-# ===== COMMAND SYSTEM (FIXED) =====
-@app.route("/command")
-def command():
-    global pending_command
-
-    cmd = pending_command
-    pending_command = None
-
-    return jsonify({"command": cmd})
-
-@app.route("/screenshot_cmd")
-def screenshot_cmd():
-    global pending_command
-    pending_command = "screenshot"
-    return redirect("/")
-
-@app.route("/lock")
-def lock():
-    global pending_command
-    pending_command = "lock"
-    return redirect("/")
-
-# ===== UPLOAD SCREENSHOT =====
-@app.route("/upload_screenshot", methods=["POST"])
-def upload_screenshot():
-    file = request.files["file"]
-
-    name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".png"
-    path = f"screenshots/{name}"
-    file.save(path)
-
+# ===== SCREENSHOT UPLOAD =====
+@app.route("/api/screenshot", methods=["POST"])
+def upload():
+    f = request.files["file"]
+    name = datetime.now().strftime("%H%M%S") + ".png"
+    f.save(f"screenshots/{name}")
     screenshots.append(name)
+    return {"ok": True}
 
-    return jsonify({"ok": True})
+# ===== DATA UPDATES =====
+@app.route("/api/processes", methods=["POST"])
+def procs():
+    global processes
+    processes = request.json.get("processes", [])
+    return {"ok": True}
 
-# ===== PROCESS LIST =====
-@app.route("/processes", methods=["POST"])
-def processes():
-    global process_data
-    process_data = request.json.get("processes", [])
-    return jsonify({"ok": True})
+@app.route("/api/files", methods=["POST"])
+def file_update():
+    global files
+    files = request.json.get("files", [])
+    return {"ok": True}
 
-# ===== RUN =====
+@app.route("/screenshots/<name>")
+def img(name):
+    return send_from_directory("screenshots", name)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
