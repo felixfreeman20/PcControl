@@ -18,19 +18,27 @@ pc_status = {
     "last_seen": "Never"
 }
 
-commands = deque()
+command_queue = deque()
 screenshots = []
 process_data = []
 
-# ===== LOGIN (ONLY FOR DASHBOARD) =====
+# ===== SCREENSHOT FILES =====
+os.makedirs("screenshots", exist_ok=True)
+
+@app.route("/screenshots/<path:name>")
+def get_screenshot(name):
+    return send_from_directory("screenshots", name)
+
+
+# ===== LOGIN =====
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         if request.form.get("password") == PASSWORD:
-            session["ok"] = True
+            session["logged_in"] = True
             return redirect("/")
     return """
-    <body style="background:#111;color:white;text-align:center;padding-top:100px;font-family:Arial">
+    <body style="background:#0f172a;color:white;text-align:center;padding-top:100px;">
         <h2>Login</h2>
         <form method="POST">
             <input name="password" type="password">
@@ -39,66 +47,67 @@ def login():
     </body>
     """
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
 
+
 # ===== DASHBOARD =====
 @app.route("/")
 def home():
-    if not session.get("ok"):
+    if not session.get("logged_in"):
         return redirect("/login")
 
     return f"""
     <html>
     <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <style>
-        body {{ font-family: Arial; background:#0f172a; color:white; margin:0; }}
-        .top {{ padding:15px; background:#111827; display:flex; justify-content:space-between; }}
-        .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; padding:10px; }}
-        .card {{ background:#1e293b; padding:10px; border-radius:10px; }}
-        img {{ width:100%; margin-top:10px; border-radius:10px; }}
-        a {{ color:white; margin-right:10px; text-decoration:none; }}
+        body {{ background:#0b1220; color:white; font-family:Arial; padding:15px; }}
+        .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }}
+        .card {{ background:#1e293b; padding:12px; border-radius:10px; }}
+        .btn {{ padding:10px; margin:5px; background:#2563eb; color:white; border-radius:8px; text-decoration:none; display:inline-block; }}
+        .danger {{ background:#ef4444; }}
+        img {{ width:100%; border-radius:10px; margin-top:10px; }}
     </style>
     </head>
 
     <body>
 
-    <div class="top">
-        <div>PC Control</div>
-        <div>
-            <a href="/screenshot">📸</a>
-            <a href="/lock">🔒</a>
-            <a href="/logout">Logout</a>
-        </div>
-    </div>
+    <h2>🖥️ PC Control</h2>
+
+    <a class="btn" href="/cmd/screenshot">📸 Screenshot</a>
+    <a class="btn" href="/cmd/lock">🔒 Lock</a>
+    <a class="btn danger" href="/logout">Logout</a>
 
     <div class="grid">
-        <div class="card">CPU {pc_status["cpu"]}%</div>
-        <div class="card">RAM {pc_status["ram"]}%</div>
-        <div class="card">Disk {pc_status["disk"]}%</div>
-        <div class="card">PC {pc_status["hostname"]}</div>
-        <div class="card">Last {pc_status["last_seen"]}</div>
+        <div class="card">CPU<br>{pc_status["cpu"]}%</div>
+        <div class="card">RAM<br>{pc_status["ram"]}%</div>
+        <div class="card">Disk<br>{pc_status["disk"]}%</div>
+        <div class="card">PC<br>{pc_status["hostname"]}</div>
+        <div class="card">Last<br>{pc_status["last_seen"]}</div>
     </div>
 
-    <h3 style="padding:10px">Screenshots</h3>
-    {''.join([f'<img src="/shots/{s}">' for s in screenshots])}
+    <h3>📸 Screenshots</h3>
+    {''.join([f'<img src="/screenshots/{s}">' for s in screenshots])}
 
-    <h3 style="padding:10px">Processes</h3>
-    {''.join([f"<div class='card'>{p['name']} - {p['cpu']}%</div>" for p in process_data])}
+    <h3>⚙️ Processes</h3>
+    {''.join([f"<div>{p['name']} - {p['cpu']}%</div>" for p in process_data])}
 
     </body>
     </html>
     """
+
 
 # ===== STATUS =====
 @app.route("/status", methods=["POST"])
 def status():
     global pc_status
 
-    data = request.json or {}
+    data = request.json
 
     pc_status.update({
         "online": True,
@@ -111,47 +120,37 @@ def status():
 
     return jsonify({"ok": True})
 
-# ===== COMMANDS (NO SESSION CHECK) =====
+
+# ===== COMMAND SYSTEM =====
 @app.route("/command")
 def command():
-    if commands:
-        return jsonify({"cmd": commands.popleft()})
+    if command_queue:
+        return jsonify({"cmd": command_queue.popleft()})
     return jsonify({"cmd": None})
 
-@app.route("/lock")
-def lock():
-    commands.append("lock")
+
+@app.route("/cmd/<action>")
+def add_cmd(action):
+    command_queue.append(action)
     return redirect("/")
 
-@app.route("/screenshot")
-def screenshot():
-    commands.append("screenshot")
-    return redirect("/")
 
-# ===== UPLOAD SCREENSHOT =====
+# ===== UPLOADS =====
 @app.route("/upload_screenshot", methods=["POST"])
 def upload_screenshot():
-    f = request.files["file"]
-    name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".png"
-    path = f"screenshots/{name}"
-    os.makedirs("screenshots", exist_ok=True)
-    f.save(path)
-
+    file = request.files["file"]
+    name = datetime.now().strftime("%H%M%S") + ".png"
+    file.save(f"screenshots/{name}")
     screenshots.append(name)
     return jsonify({"ok": True})
 
-@app.route("/shots/<name>")
-def shots(name):
-    return send_from_directory("screenshots", name)
 
-# ===== PROCESSES =====
 @app.route("/processes", methods=["POST"])
 def processes():
     global process_data
     process_data = request.json.get("processes", [])
     return jsonify({"ok": True})
 
-# ===== START =====
+
 if __name__ == "__main__":
-    os.makedirs("screenshots", exist_ok=True)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
